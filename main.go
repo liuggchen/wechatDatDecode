@@ -51,38 +51,50 @@ func main() {
 		panic(outputDir + "is file")
 	}
 
+	var taskChan = make(chan bool, len(readdir))
 	for _, info := range readdir {
-		if info.IsDir() || filepath.Ext(info.Name()) != ".dat" {
-			continue
-		}
-		fmt.Println("find file: ", info.Name())
-		fPath := dir + "/" + info.Name()
-		bts, er := ioutil.ReadFile(fPath)
-		if er != nil {
-			fmt.Println(er.Error())
-		}
-		deCodeByte, ext, er := handlerImg(bts)
-		if er != nil {
-			fmt.Println(er.Error())
-			continue
-		}
+		go func(info os.FileInfo) {
+			handlerOne(info, dir, outputDir)
+			taskChan <- true
+		}(info)
+	}
 
-		f, er := os.Create(outputDir + "/" + info.Name() + ext)
-		if er != nil {
-			fmt.Println(er.Error())
-			continue
-		}
-		for _, bt := range bts {
-			_, er := f.Write([]byte{bt ^ deCodeByte})
-			if er != nil {
-				fmt.Println(er.Error())
-			}
-		}
-		_ = f.Close()
-
-		fmt.Println("输出文件：", f.Name())
+	for i := 0; i < len(readdir); i++ {
+		<-taskChan
 	}
 	fmt.Println("全部解码完成")
+}
+
+func handlerOne(info os.FileInfo, dir string, outputDir string, ) {
+	if info.IsDir() || filepath.Ext(info.Name()) != ".dat" {
+		return
+	}
+	fmt.Println("find file: ", info.Name())
+	fPath := dir + "/" + info.Name()
+	bts, er := ioutil.ReadFile(fPath)
+	if er != nil {
+		fmt.Println(er.Error())
+	}
+	deCodeByte, ext, er := handlerImg(bts)
+	if er != nil {
+		fmt.Println(er.Error())
+		return
+	}
+
+	f, er := os.Create(outputDir + "/" + info.Name() + ext)
+	if er != nil {
+		fmt.Println(er.Error())
+		return
+	}
+	for _, bt := range bts {
+		_, er := f.Write([]byte{bt ^ deCodeByte})
+		if er != nil {
+			fmt.Println(er.Error())
+		}
+	}
+	_ = f.Close()
+
+	fmt.Println("输出文件：", f.Name())
 }
 
 func handlerImg(bts []byte) (byte, string, error) {
