@@ -8,6 +8,7 @@ import (
 	"io/ioutil"
 	"os"
 	"path/filepath"
+	"sync"
 )
 
 //JPEG (jpg)，文件头：FFD8FF
@@ -51,17 +52,16 @@ func main() {
 		panic(outputDir + "is file")
 	}
 
-	var taskChan = make(chan bool, len(readdir))
+	var wg sync.WaitGroup
 	for _, info := range readdir {
+		wg.Add(1)
 		go func(info os.FileInfo) {
 			handlerOne(info, dir, outputDir)
-			taskChan <- true
+			wg.Done()
 		}(info)
 	}
 
-	for i := 0; i < len(readdir); i++ {
-		<-taskChan
-	}
+	wg.Wait()
 	fmt.Println("全部解码完成")
 }
 

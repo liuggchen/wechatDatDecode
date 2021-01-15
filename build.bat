@@ -1,0 +1,1 @@
+go build -o wechatDatDecode.exe main.go
