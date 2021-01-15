@@ -52,13 +52,28 @@ func main() {
 		panic(outputDir + "is file")
 	}
 
+	var taskChan = make(chan os.FileInfo, 100)
+
+	go func() {
+		for _, info := range readdir {
+			taskChan <- info
+		}
+		close(taskChan)
+	}()
+
 	var wg sync.WaitGroup
-	for _, info := range readdir {
+	for i := 0; i < 10; i++ {
 		wg.Add(1)
-		go func(info os.FileInfo) {
-			handlerOne(info, dir, outputDir)
-			wg.Done()
-		}(info)
+		go func() {
+			defer wg.Done()
+			for {
+				if info, ok := <-taskChan; ok {
+					handlerOne(info, dir, outputDir)
+				} else {
+					break
+				}
+			}
+		}()
 	}
 
 	wg.Wait()
