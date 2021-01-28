@@ -25,13 +25,12 @@ const (
 )
 
 func main() {
-	in := flag.String("in", ".", "要处理的目录")
-	out := flag.String("out", "./Decode", "要输出的目录")
+	var dir, outputDir string
+	flag.StringVar(&dir, "in", ".", "要处理的目录")
+	flag.StringVar(&outputDir, "out", "./Decode", "要输出的目录")
 	flag.Parse()
-	fmt.Println("处理目录：", *in)
-	fmt.Println("输出目录目录：", *out)
-	var dir = *in
-	var outputDir = *out
+	fmt.Printf("处理目录：%v\n输出目录：%v\n", dir, outputDir)
+
 	f, er := os.Open(dir)
 	if er != nil {
 		fmt.Println(er.Error())
@@ -41,10 +40,9 @@ func main() {
 	if er != nil {
 		fmt.Println(er.Error())
 	}
-	stat, er := os.Stat(outputDir)
 
-	if er != nil {
-		er := os.Mkdir(outputDir, 0755)
+	if stat, er := os.Stat(outputDir); os.IsNotExist(er) {
+		er := os.MkdirAll(outputDir, 0755)
 		if er != nil {
 			panic("create dir: " + outputDir + " fail")
 		}
@@ -89,6 +87,7 @@ func handlerOne(info os.FileInfo, dir string, outputDir string, ) {
 	bts, er := ioutil.ReadFile(fPath)
 	if er != nil {
 		fmt.Println(er.Error())
+		return
 	}
 	deCodeByte, ext, er := handlerImg(bts)
 	if er != nil {
