@@ -1,28 +1,19 @@
 package main
 
 import (
+	"bufio"
 	"encoding/hex"
 	"errors"
 	"flag"
 	"fmt"
-	"io/ioutil"
+	"io"
 	"os"
 	"path/filepath"
 	"sync"
+	"time"
 )
 
-//JPEG (jpg)，文件头：FFD8FF
-//PNG (png)，文件头：89504E47
-//GIF (gif)，文件头：47494638
-//TIFF (tif)，文件头：49492A00
-//Windows Bitmap (bmp)，文件头：424D
-const (
-	Jpeg = "FFD8FF"
-	Png  = "89504E47"
-	Gif  = "47494638"
-	Tif  = "49492A00"
-	Bmp  = "424D"
-)
+var imagePrefixBtsMap = make(map[string][]byte)
 
 func main() {
 	var dir, outputDir string
@@ -31,6 +22,7 @@ func main() {
 	flag.Parse()
 	fmt.Printf("处理目录：%v\n输出目录：%v\n", dir, outputDir)
 
+	startTime := time.Now()
 	f, er := os.Open(dir)
 	if er != nil {
 		fmt.Println(er.Error())
@@ -64,18 +56,15 @@ func main() {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			for {
-				if info, ok := <-taskChan; ok {
-					handlerOne(info, dir, outputDir)
-				} else {
-					break
-				}
+			for info := range taskChan {
+				handlerOne(info, dir, outputDir)
 			}
 		}()
 	}
 
 	wg.Wait()
-	fmt.Println("全部解码完成")
+	t := time.Now().Sub(startTime).Seconds()
+	fmt.Printf("\nfinished time= %v s\n", t)
 }
 
 func handlerOne(info os.FileInfo, dir string, outputDir string, ) {
@@ -84,64 +73,91 @@ func handlerOne(info os.FileInfo, dir string, outputDir string, ) {
 	}
 	fmt.Println("find file: ", info.Name())
 	fPath := dir + "/" + info.Name()
-	bts, er := ioutil.ReadFile(fPath)
-	if er != nil {
-		fmt.Println(er.Error())
+	sourceFile, err := os.Open(fPath)
+	if err != nil {
+		fmt.Println(err.Error())
 		return
 	}
-	deCodeByte, ext, er := handlerImg(bts)
+
+	var preTenBts = make([]byte, 10)
+	_, _ = sourceFile.Read(preTenBts)
+	decodeByte, ext, er := findDecodeByte(preTenBts)
 	if er != nil {
 		fmt.Println(er.Error())
 		return
 	}
 
-	f, er := os.Create(outputDir + "/" + info.Name() + ext)
+	distFile, er := os.Create(outputDir + "/" + info.Name() + ext)
 	if er != nil {
 		fmt.Println(er.Error())
 		return
 	}
-	for _, bt := range bts {
-		_, er := f.Write([]byte{bt ^ deCodeByte})
+	writer := bufio.NewWriter(distFile)
+	_, _ = sourceFile.Seek(0, 0)
+	var rBts = make([]byte, 1024)
+	for {
+		n, er := sourceFile.Read(rBts)
 		if er != nil {
-			fmt.Println(er.Error())
+			if er == io.EOF {
+				break
+			}
+			fmt.Println("error: ", er.Error())
+			return
+		}
+		for i := 0; i < n; i++ {
+			_ = writer.WriteByte(rBts[i] ^ decodeByte)
 		}
 	}
-	_ = f.Close()
+	_ = writer.Flush()
+	_ = distFile.Close()
 
-	fmt.Println("输出文件：", f.Name())
+	fmt.Println("output file：", distFile.Name())
 }
 
-func handlerImg(bts []byte) (byte, string, error) {
+func init() {
+	//JPEG (jpg)，文件头：FFD8FF
+	//PNG (png)，文件头：89504E47
+	//GIF (gif)，文件头：47494638
+	//TIFF (tif)，文件头：49492A00
+	//Windows Bitmap (bmp)，文件头：424D
+	const (
+		Jpeg = "FFD8FF"
+		Png  = "89504E47"
+		Gif  = "47494638"
+		Tif  = "49492A00"
+		Bmp  = "424D"
+	)
 	JpegPrefixBytes, _ := hex.DecodeString(Jpeg)
 	PngPrefixBytes, _ := hex.DecodeString(Png)
 	GifPrefixBytes, _ := hex.DecodeString(Gif)
 	TifPrefixBytes, _ := hex.DecodeString(Tif)
 	BmpPrefixBytes, _ := hex.DecodeString(Bmp)
 
-	prefixMap := map[string][]byte{
+	imagePrefixBtsMap = map[string][]byte{
 		".jpeg": JpegPrefixBytes,
 		".png":  PngPrefixBytes,
 		".gif":  GifPrefixBytes,
 		".tif":  TifPrefixBytes,
 		".bmp":  BmpPrefixBytes,
 	}
+}
 
-	for ext, prefixBytes := range prefixMap {
-		deCodeByte, ext, err := handlerPrefix(prefixBytes, ext, bts)
+func findDecodeByte(bts []byte) (byte, string, error) {
+	for ext, prefixBytes := range imagePrefixBtsMap {
+		deCodeByte, err := testPrefix(prefixBytes, bts)
 		if err == nil {
 			return deCodeByte, ext, err
 		}
 	}
-	return 0, "", errors.New("文件处理失败")
+	return 0, "", errors.New("decode fail")
 }
 
-func handlerPrefix(JpegPrefixBytes []byte, suffix string, bts []byte) (deCodeByte byte, ext string, error error) {
-	var initDecodeByte = JpegPrefixBytes[0] ^ bts[0]
-	for i, prefixByte := range JpegPrefixBytes {
-		deCodeByte := prefixByte ^ bts[i]
-		if deCodeByte != initDecodeByte {
-			return 0, suffix, errors.New("NOT jpeg")
+func testPrefix(prefixBytes []byte, bts []byte) (deCodeByte byte, error error) {
+	var initDecodeByte = prefixBytes[0] ^ bts[0]
+	for i, prefixByte := range prefixBytes {
+		if b := prefixByte ^ bts[i]; b != initDecodeByte {
+			return 0, errors.New("no")
 		}
 	}
-	return initDecodeByte, suffix, nil
+	return initDecodeByte, nil
 }
