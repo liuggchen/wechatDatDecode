@@ -20,7 +20,12 @@ func main() {
 	flag.StringVar(&dir, "in", ".", "要处理的目录")
 	flag.StringVar(&outputDir, "out", "./Decode", "要输出的目录")
 	flag.Parse()
-	fmt.Printf("处理目录：%v\n输出目录：%v\n", dir, outputDir)
+	fmt.Printf(`
+https://github.com/liuggchen/wechatDatDecode.git
+
+处理目录：%v
+输出目录：%v
+`, dir, outputDir)
 
 	startTime := time.Now()
 	f, er := os.Open(dir)
