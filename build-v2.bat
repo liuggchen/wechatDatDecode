@@ -1,0 +1,1 @@
+go build -o wx4decodedat.exe ./cmd/v2
